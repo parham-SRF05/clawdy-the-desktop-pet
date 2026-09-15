@@ -2,6 +2,7 @@
 and a window that stays on top without stealing focus or appearing in Alt+Tab."""
 import ctypes
 import ctypes.wintypes as wt
+import os
 
 user32 = ctypes.WinDLL('user32', use_last_error=True)
 
@@ -137,6 +138,77 @@ def release_instance():
     if _instance:
         kernel32.CloseHandle(_instance)
         _instance = None
+
+
+class LASTINPUTINFO(ctypes.Structure):
+    _fields_ = [('cbSize', wt.UINT), ('dwTime', wt.DWORD)]
+
+
+class SYSTEM_POWER_STATUS(ctypes.Structure):
+    _fields_ = [('ACLineStatus', ctypes.c_ubyte), ('BatteryFlag', ctypes.c_ubyte), ('BatteryLifePercent', ctypes.c_ubyte),
+                ('SystemStatusFlag', ctypes.c_ubyte), ('BatteryLifeTime', wt.DWORD), ('BatteryFullLifeTime', wt.DWORD)]
+
+
+user32.GetWindowThreadProcessId.argtypes = [wt.HWND, ctypes.POINTER(wt.DWORD)]
+user32.GetWindowTextW.argtypes = [wt.HWND, wt.LPWSTR, ctypes.c_int]
+user32.GetCursorPos.argtypes = [ctypes.POINTER(wt.POINT)]
+kernel32.OpenProcess.restype = wt.HANDLE
+kernel32.OpenProcess.argtypes = [wt.DWORD, wt.BOOL, wt.DWORD]
+kernel32.QueryFullProcessImageNameW.argtypes = [wt.HANDLE, wt.DWORD, wt.LPWSTR, ctypes.POINTER(wt.DWORD)]
+PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+
+
+def foreground_app():
+    """(program file name, window title) of the app you're using, or (None, None).
+    Read only to pick something to say; never stored."""
+    hwnd = user32.GetForegroundWindow()
+    if not hwnd:
+        return None, None
+    name = ctypes.create_unicode_buffer(64)
+    user32.GetClassNameW(hwnd, name, 64)
+    if name.value in SHELL_WINDOWS:
+        return None, None
+    pid = wt.DWORD()
+    user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+    if pid.value == os.getpid():
+        return None, None  # the pet's own menu or panel
+    exe = None
+    process = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid.value)
+    if process:
+        path = ctypes.create_unicode_buffer(520)
+        size = wt.DWORD(520)
+        if kernel32.QueryFullProcessImageNameW(process, 0, path, ctypes.byref(size)):
+            exe = os.path.basename(path.value).lower()
+        kernel32.CloseHandle(process)
+    title = ctypes.create_unicode_buffer(256)
+    user32.GetWindowTextW(hwnd, title, 256)
+    return exe, title.value
+
+
+def idle_seconds():
+    """Seconds since the last mouse or keyboard input anywhere on the PC."""
+    info = LASTINPUTINFO()
+    info.cbSize = ctypes.sizeof(info)
+    if not user32.GetLastInputInfo(ctypes.byref(info)):
+        return 0.0
+    return ((kernel32.GetTickCount() - info.dwTime) & 0xFFFFFFFF) / 1000.0
+
+
+def battery():
+    """(percent, charging), or (None, None) on a PC without a battery."""
+    status = SYSTEM_POWER_STATUS()
+    if not kernel32.GetSystemPowerStatus(ctypes.byref(status)):
+        return None, None
+    if status.BatteryFlag & 128 or status.BatteryLifePercent == 255:
+        return None, None
+    return int(status.BatteryLifePercent), status.ACLineStatus == 1
+
+
+def cursor_pos():
+    point = wt.POINT()
+    if not user32.GetCursorPos(ctypes.byref(point)):
+        return None
+    return point.x, point.y
 
 
 def place(hwnd, x, y):

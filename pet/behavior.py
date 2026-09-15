@@ -1,14 +1,19 @@
-"""What the pet does: walking, tricks, jumping, being dragged, sleeping and reacting to Claude Code.
+"""What the pet does: walking, tricks, jumping, being dragged, sleeping, talking and reacting to Claude Code.
 
-No window code here: the app feeds in time, the Claude mood and mouse actions, and reads back
-the position, animation and speech bubble.
+No window code here: the app feeds in time, the Claude mood, what you're doing and mouse actions,
+and reads back the position, animation and speech bubble.
 """
 import math
 import random
 
+from .config import DEFAULTS
+
 ACTIVITY_DWELL = 0.8      # seconds an activity animation stays before switching (no flicker)
 LAND_TIME = 0.35
-TRICK_CHANCE = 0.4        # after a walk, chance of doing a trick instead of just standing
+TRICK_CHANCE = 0.55       # after a walk, chance of doing a trick instead of just standing
+HINT_CHANCE = 0.6         # when you're busy in an app, chance a trick copies what you're doing
+POKES_FOR_DIZZY, POKE_WINDOW = 3, 1.5
+WATCH_RANGE = (260, 220)  # the pet watches the mouse pointer when it's this close (x, y px)
 
 REACTION_ANIM = {         # reaction -> (animation, seconds, bubble message key, jumps)
     'done': ('celebrate', 2.4, 'done', 2),
@@ -18,10 +23,13 @@ REACTION_ANIM = {         # reaction -> (animation, seconds, bubble message key,
     'bye': ('wave', 2.0, 'bye', 0),
     'compact': (None, 2.5, 'compact', 0),
     'poke': ('happy', 1.4, 'poke', 1),
+    'dizzy': ('dizzy', 2.2, 'dizzy', 0),
     'hover': ('wave', 1.2, None, 0),
 }
 TRICKS = [('wave', 1.6, 0), ('dance', 2.4, 0), ('look', 2.0, 0), ('happy', 1.3, 1), ('sit', 3.0, 0),
-          ('celebrate', 1.2, 1)]
+          ('celebrate', 1.2, 1), ('type', 3.2, 0), ('read', 2.6, 0), ('command', 2.6, 0), ('web', 2.6, 0),
+          ('think', 2.4, 0)]
+JUMPY = {'celebrate': 1, 'happy': 1}
 
 
 def walk_zone(screen, percent=100, align='center'):
@@ -65,6 +73,11 @@ class Pet:
         self.anim, self.anim_time = 'idle', 0.0
         self.mood_state = 'idle'
         self.next_hop = now
+        self.hint = None         # animation matching what you're doing (e.g. "type" in VS Code)
+        self.cursor = None       # mouse pointer position on screen
+        self.pokes = []
+        self.lines = None        # optional: key -> a fun line (from the chatter)
+        self.trick_deck = []
 
     # --- world ---------------------------------------------------------------------------
 
@@ -82,10 +95,31 @@ class Pet:
 
     # --- input ---------------------------------------------------------------------------
 
+    def text_for(self, key):
+        """A fun line for this moment. A message you customised in the settings always wins."""
+        custom = self.cfg['messages'].get(key)
+        if self.lines and custom == DEFAULTS['messages'].get(key, custom):
+            line = self.lines(key)
+            if line:
+                return line
+        return custom
+
     def say(self, now, key, seconds=2.5):
-        text = self.cfg['messages'].get(key) if key else None
+        text = self.text_for(key) if key else None
         if text and self.cfg['bubbles']:
             self.bubble = (text, now + seconds)
+
+    def chat(self, now, text, anim=None, seconds=4.0):
+        """Say something about what you're doing (never over Claude needing you)."""
+        if not text or self.mood_state == 'needs_you' or self.mode != 'ground':
+            return False
+        if self.cfg['bubbles']:
+            self.bubble = (text, now + seconds)
+        if anim and self.mood_state == 'idle' and not self.asleep:
+            self.reaction = (anim, now + min(seconds, 3.5))
+            self.target = None
+            self.jumps.extend(now + 0.2 + i * 0.7 for i in range(JUMPY.get(anim, 0)))
+        return True
 
     def react(self, now, name):
         self._wake(now)
@@ -99,7 +133,12 @@ class Pet:
         self.jumps.extend(now + i * 0.9 for i in range(jumps))
 
     def poke(self, now):
-        self.react(now, 'poke')
+        self.pokes = [t for t in self.pokes if now - t < POKE_WINDOW] + [now]
+        if len(self.pokes) >= POKES_FOR_DIZZY:
+            self.pokes = []
+            self.react(now, 'dizzy')
+        else:
+            self.react(now, 'poke')
 
     def hover(self, now, on):
         if on and not self.hovered and self.mode == 'ground' and self.mood_state == 'idle' and not self.busy_reacting(now):
@@ -192,6 +231,15 @@ class Pet:
         elif self.mode == 'fall':
             self.mode = 'ground'
 
+    def _pick_trick(self):
+        if self.hint and self.rng.random() < HINT_CHANCE:
+            return self.hint, 3.2, JUMPY.get(self.hint, 0)
+        # Like a shuffled deck: every trick (coding, reading, dancing...) shows before any repeats.
+        if not self.trick_deck:
+            self.trick_deck = list(TRICKS)
+            self.rng.shuffle(self.trick_deck)
+        return self.trick_deck.pop()
+
     def _walk(self, now, dt):
         if self.hovered:
             self.target = None
@@ -208,7 +256,7 @@ class Pet:
             if now < self.pause_until:
                 return
             if self.cfg['tricks'] and self.rng.random() < TRICK_CHANCE:
-                anim, seconds, jumps = self.rng.choice(TRICKS)
+                anim, seconds, jumps = self._pick_trick()
                 self.reaction = (anim, now + seconds)
                 self.jumps.extend(now + 0.2 + i * 0.6 for i in range(jumps))
                 self.pause_until = now + seconds + self.rng.uniform(0.5, 2.0)
@@ -233,6 +281,17 @@ class Pet:
         else:
             self.x += step * self.facing
 
+    def _watching(self):
+        """True (and turns to face it) when the mouse pointer is close by."""
+        if not self.cursor:
+            return False
+        dx, dy = self.cursor[0] - self.x, (self.floor - self.lift) - self.cursor[1]
+        if abs(dx) > WATCH_RANGE[0] or not -40 < dy < WATCH_RANGE[1]:
+            return False
+        if abs(dx) > 12:
+            self.facing = 1 if dx > 0 else -1
+        return True
+
     def _pick_animation(self, now, dt):
         if self.mode == 'drag':
             anim = 'drag'
@@ -248,6 +307,8 @@ class Pet:
             anim = 'sleep'
         elif self.target is not None:
             anim = 'walk'
+        elif self.resting_anim == 'idle' and self._watching():
+            anim = 'watch'
         else:
             anim = self.resting_anim
         if anim != self.anim:

@@ -6,14 +6,15 @@ import time
 import tkinter as tk
 import traceback
 
-from . import config, skins, sprites, winapi
+from . import chatter as talk, config, skins, sprites, winapi
 from .behavior import Pet, walk_zone
 from .bridge import Bridge, Mood
 
 KEY = '#ff00fe'            # see-through colour: clicks on it pass to the window below
 FRAME_TIME = 1 / 60
 POLL_EVERY, AREA_EVERY, FULLSCREEN_EVERY, TOPMOST_EVERY, PANEL_EVERY = 0.15, 2.0, 0.5, 1.0, 0.5
-BUBBLE_ROOM = 48           # px above the pet for speech bubbles
+WATCH_EVERY = 1.0          # how often it checks what you're doing
+BUBBLE_ROOM = 64           # px above the pet for speech bubbles (two lines fit)
 LOG_FILE = os.path.join(config.CONFIG_DIR, 'pet.log')
 
 BG, BORDER, TEXT, MUTED = '#1f1e1d', '#d77757', '#f4f1ea', '#9b978f'
@@ -157,7 +158,7 @@ class App:
 
         self.frames, size = self._load_art()
         self.sprite_w, self.sprite_h = size
-        self.canvas_w = self.sprite_w + 180
+        self.canvas_w = self.sprite_w + 240
         self.canvas_h = self.sprite_h + BUBBLE_ROOM
         self.canvas = tk.Canvas(self.root, width=self.canvas_w, height=self.canvas_h, bg=KEY,
                                 highlightthickness=0, bd=0)
@@ -165,8 +166,8 @@ class App:
         self.sprite = self.canvas.create_image(self.canvas_w // 2, self.canvas_h, anchor='s')
         self.bubble_box = self.canvas.create_rectangle(0, 0, 0, 0, fill='#ffffff', outline='#3b2219',
                                                        width=2, state='hidden')
-        self.bubble_text = self.canvas.create_text(0, 0, text='', fill='#3b2219', state='hidden',
-                                                   font=('Segoe UI', 9, 'bold'))
+        self.bubble_text = self.canvas.create_text(0, 0, text='', fill='#3b2219', state='hidden', width=220,
+                                                   anchor='s', justify='center', font=('Segoe UI', 9, 'bold'))
         self.shown_image = self.shown_bubble = self.shown_pos = None
 
         now = time.perf_counter()
@@ -174,6 +175,9 @@ class App:
         self.pet = Pet(cfg, self._zone(), size, now, screen=self.screen)
         self.bridge = Bridge()
         self.bridge.cleanup()
+        self.chatter = talk.Chatter(cfg)
+        self.pet.lines = self.chatter.line
+        self.next_watch = now
         self.mood = Mood('idle', None, '', [])
         self.next_poll = self.next_area = self.next_fullscreen = self.next_topmost = self.next_panel = now
         self.hidden = False
@@ -253,6 +257,10 @@ class App:
                 winapi.show(self.hwnd, not hide)
                 if hide:
                     self._hover_end()
+        if now >= self.next_watch:
+            self.next_watch = now + WATCH_EVERY
+            self._watch_pc(now)
+        self.pet.cursor = winapi.cursor_pos()
         if self.hover_off_at is not None and now >= self.hover_off_at:
             self._hover_end()
         self.pet.update(now, dt, mood)
@@ -280,7 +288,7 @@ class App:
             if text:  # (a hidden item has no size, so show it before measuring)
                 cx, bottom = self.canvas_w // 2, BUBBLE_ROOM + self.sprite_h // 3
                 self.canvas.itemconfigure(self.bubble_text, text=text)
-                self.canvas.coords(self.bubble_text, cx, bottom - 14)
+                self.canvas.coords(self.bubble_text, cx, bottom - 8)
                 box = self.canvas.bbox(self.bubble_text)
                 if box:
                     x0, y0, x1, y1 = box
@@ -292,6 +300,16 @@ class App:
             self.next_topmost = now + TOPMOST_EVERY
             self.shown_pos = pos
             winapi.place(self.hwnd, *pos)
+
+    def _watch_pc(self, now):
+        """What you're doing: maybe something to say, and which animation to copy."""
+        try:
+            snap = talk.snapshot(winapi)
+        except OSError:
+            return
+        for line in self.chatter.observe(time.time(), snap):
+            self.pet.chat(now, line.text, line.anim)
+        self.pet.hint = self.chatter.busy_with(snap) if self.cfg['copy_my_apps'] else None
 
     # --- hover: progress panel -------------------------------------------------------------
 
@@ -354,6 +372,12 @@ class App:
         bubbles = tk.BooleanVar(self.root, self.cfg['bubbles'])
         menu.add_checkbutton(label='Walk around', variable=wander, command=lambda: self._set('wander', wander.get()))
         menu.add_checkbutton(label='Do tricks', variable=tricks, command=lambda: self._set('tricks', tricks.get()))
+        chatty = tk.BooleanVar(self.root, self.cfg['chatter'])
+        copy = tk.BooleanVar(self.root, self.cfg['copy_my_apps'])
+        menu.add_checkbutton(label='Talk about what I do', variable=chatty,
+                             command=lambda: self._set('chatter', chatty.get()))
+        menu.add_checkbutton(label='Copy what I do', variable=copy,
+                             command=lambda: self._set('copy_my_apps', copy.get()))
         menu.add_checkbutton(label='Speech bubbles', variable=bubbles,
                              command=lambda: self._set('bubbles', bubbles.get()))
 
@@ -378,7 +402,7 @@ class App:
         menu.add_separator()
         menu.add_command(label='Settings file...', command=self._open_settings)
         menu.add_command(label='Quit', command=self.quit)
-        self._menu_ref = (menu, area, sizes, wander, tricks, bubbles, width, align, size)  # keep alive
+        self._menu_ref = (menu, area, sizes, wander, tricks, chatty, copy, bubbles, width, align, size)  # keep alive
         menu.tk_popup(event.x_root, event.y_root)
 
     def _set(self, key, value):

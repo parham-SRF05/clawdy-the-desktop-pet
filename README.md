@@ -1,6 +1,6 @@
 # Clawdy the Desktop Pet
 
-The little square Claude Code character, living on your Windows taskbar. It walks around, does tricks, and reacts to what **Claude Code** is doing in real time. Hover over it to see Claude's progress on your task.
+The little square Claude Code character, living on your Windows taskbar. It walks around, does tricks, talks about what you're doing, and reacts to what **Claude Code** is doing in real time. Hover over it to see Claude's progress on your task.
 
 ```
  ▐▛███▜▌
@@ -18,7 +18,15 @@ The little square Claude Code character, living on your Windows taskbar. It walk
 
 ## What it does
 
-- **Always lively:** walks along your taskbar and does little tricks: waves, dances, hops, looks around.
+- **Always lively, even with Claude closed:** walks along your taskbar and shows off every animation as a trick: coding on its laptop, reading, running commands, browsing, thinking, dancing, waving.
+- **Talks about what you do:** open Chrome and it jokes about your RAM. It has lines for VS Code, Cursor, terminals, Steam, Content Manager, Spotify, Discord, Task Manager ("please don't end me") and more, plus websites like YouTube, GitHub and ChatGPT.
+- **Copies you:** codes along while you're in VS Code, browses along in Chrome, taps its terminal while you use yours, dances to Spotify.
+- **Notices you:**
+  - its eyes follow your mouse when it's close
+  - poke it 3 times fast and it gets dizzy
+  - it asks if anyone's there when you're away, and welcomes you back
+  - it says good morning, and tells you to go to bed at 3am
+  - it complains when your battery is low
 - **Shows what Claude is doing:**
   - types on a laptop while Claude edits code
   - uses a magnifying glass while it reads files
@@ -141,9 +149,11 @@ Claude Code picks up the new hooks straight away. If nothing happens, start a ne
 | Do this | Clawdy does |
 |---|---|
 | Hover over it | Stops, waves, and shows Claude's progress |
-| Click it | Happy hop with hearts |
+| Move the mouse near it | It watches your pointer |
+| Click it | Happy hop with hearts and a random line |
+| Click it 3 times fast | Gets dizzy |
 | Drag it | Dangles; let go and it falls back onto the taskbar |
-| Right-click it | Menu: sleep / wake up, walk around, do tricks, speech bubbles, walking area, size, settings, quit |
+| Right-click it | Menu: sleep / wake up, walk around, do tricks, talk about what I do, copy what I do, speech bubbles, walking area, size, settings, quit |
 
 **The progress panel shows:**
 
@@ -170,7 +180,11 @@ Right-click Clawdy → **Settings file...** to open `%USERPROFILE%\.claude-pet\c
 | `wander` | `true` | Walk around when Claude is idle |
 | `walk_width_percent` | `100` | How much of the taskbar it walks on (10-100) |
 | `walk_align` | `"center"` | Where that part is: `"left"`, `"center"` or `"right"` |
-| `tricks` | `true` | Little tricks while wandering |
+| `tricks` | `true` | Tricks while wandering (every animation, including coding) |
+| `chatter` | `true` | Talk about what you're doing: apps, websites, away/back, battery, time of day |
+| `chatter_gap_seconds` | `45` | At least this long between comments (5-3600) |
+| `copy_my_apps` | `true` | Copy what you're doing (code along in VS Code, browse along in Chrome...) |
+| `custom_lines` | `{}` | Your own lines, e.g. `{"chrome": ["My Chrome joke"]}` |
 | `bubbles` | `true` | Speech bubbles |
 | `react_to_claude` | `true` | React to Claude Code at all |
 | `start_with_claude_code` | `true` | Start Clawdy when a Claude Code session starts |
@@ -195,6 +209,22 @@ Right-click Clawdy → **Settings file...** to open `%USERPROFILE%\.claude-pet\c
 ```
 
 Colour names: `body`, `eye`, `shine`, `outline` (empty = no outline, like the original), `prop`, `prop_light`, `yellow`, `red`, `snooze`, `bubble`.
+
+**Add your own jokes** (they're mixed in with the built-in ones):
+
+```json
+"custom_lines": {
+  "chrome": ["Another tab? Really?"],
+  "vscode": ["Ship it!"],
+  "youtube": ["One more video, then work!"]
+}
+```
+
+Keys for apps: `chrome`, `edge`, `firefox`, `brave`, `browser`, `vscode`, `cursor`, `ide`, `notepad`, `terminal`, `claude`, `explorer`, `steam`, `assetto`, `contentmanager`, `spotify`, `discord`, `chat`, `word`, `excel`, `powerpoint`, `github`, `obs`, `video`, `taskmanager`, `art`.
+
+Keys for websites and moments: `youtube`, `github_site`, `stackoverflow`, `chatgpt`, `claude_site`, `reddit`, `movie`, `mail`, `f1`, `social`, `idle`, `back`, `morning`, `night`, `battery_low`, `charging`, `poke`, `dizzy`, `done`.
+
+Program-to-key mapping and every built-in line are in `pet/lines.py`.
 
 ### Custom skins
 
@@ -222,7 +252,7 @@ With 48×32 frames (the built-in size, the character standing on the bottom row)
 
 | Animation | Plays when |
 |---|---|
-| `idle`, `walk`, `sit`, `look`, `dance`, `sleep` | Normal life and tricks |
+| `idle`, `walk`, `sit`, `look`, `watch`, `dance`, `dizzy`, `sleep` | Normal life, tricks, watching the mouse, too many pokes |
 | `think` | Claude is planning |
 | `type` | Editing files |
 | `read` | Reading or searching files |
@@ -250,6 +280,13 @@ Everything stays on your PC, in `%USERPROFILE%\.claude-pet\`.
 **It never stores:** code, file contents, command output, or the rest of your messages.
 
 Session logs older than a day are deleted when Clawdy starts.
+
+**To talk about what you're doing**, Clawdy looks at a few things once a second. None of it is ever saved or sent anywhere:
+- which program is in front, and its window title
+- how long since you last touched the mouse or keyboard
+- the battery level
+
+Turn this off with `"chatter": false` and `"copy_my_apps": false`.
 
 ---
 
@@ -281,12 +318,14 @@ python install.py --uninstall
 | `install.py` | Adds or removes the Claude Code hooks |
 | `hooks/pet_hook.py` | The hook: records each Claude Code event |
 | `pet/app.py` | The window: drawing, mouse, speech bubbles, progress panel, menu |
-| `pet/behavior.py` | Walking, tricks, jumps, dragging, reactions |
+| `pet/behavior.py` | Walking, tricks, jumps, dragging, reactions, watching the mouse |
+| `pet/chatter.py` | Decides when to say something about what you're doing |
+| `pet/lines.py` | Every line Clawdy says, and the apps and websites it knows |
 | `pet/bridge.py` | Reads the session logs: mood and progress |
 | `pet/sprites.py` | The pixel art and animations, drawn in code |
 | `pet/skins.py` | Loads custom sprite-sheet skins |
 | `pet/config.py` | Settings and their defaults |
-| `pet/winapi.py` | Windows calls: taskbar position, fullscreen detection, focus-free window |
+| `pet/winapi.py` | Windows calls: taskbar, fullscreen detection, focus-free window, app in front, idle time, battery, mouse |
 | `tests/` | Tests (no game or Claude Code needed) |
 
 ## Tests
@@ -299,6 +338,10 @@ python tests/test_logic.py
 python tests/test_install.py
 ```
 
+```bash
+python tests/test_chatter.py
+```
+
 - **`test_logic.py`:**
   - the hook: what it records and what it never records
   - session priority, reactions and progress tracking
@@ -306,6 +349,12 @@ python tests/test_install.py
   - settings validation
   - the character's exact shape
 - **`test_install.py`:** installing adds each hook once, keeps your other hooks, and uninstalling restores your settings exactly.
+- **`test_chatter.py`:**
+  - app and website lines, and not being spammy
+  - away/back, battery and late-night lines
+  - copying what you do, dizzy pokes, watching the mouse
+  - work animations showing with Claude closed
+  - reading the app in front from Windows
 
 ## Notes
 

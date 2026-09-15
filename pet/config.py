@@ -18,7 +18,11 @@ DEFAULTS = {
     'start_with_claude_code': True,  # the pet starts by itself when a Claude Code session starts
     'hide_in_fullscreen': True,   # hide while a game or video fills the main screen
     'sleep_after_seconds': 0,     # fall asleep after this long with nothing happening (0 = never)
-    'tricks': True,               # little cute moments (wave, dance, hop, look around) while wandering
+    'tricks': True,               # little cute moments (wave, dance, coding, reading...) while wandering
+    'chatter': True,              # talk about what you're doing (apps, websites, away, battery, time)
+    'chatter_gap_seconds': 45,    # at least this long between comments
+    'copy_my_apps': True,         # do what you're doing: code along in VS Code, browse along in Chrome...
+    'custom_lines': {},           # your own lines, e.g. {"chrome": ["My Chrome joke"]}
     'store_task_titles': True,    # the hover panel shows the first line of what you asked Claude
     'skin': '',                   # folder name in .claude-pet\skins (empty = built-in pixel art)
     'colors': {},                 # override any built-in colour, e.g. {"body": "#6aa3ff"}
@@ -34,7 +38,7 @@ DEFAULTS = {
 }
 
 LIMITS = {'scale': (1, 8), 'walk_speed': (0.2, 3.0), 'sleep_after_seconds': (0, 86400),
-          'walk_width_percent': (10, 100)}
+          'walk_width_percent': (10, 100), 'chatter_gap_seconds': (5, 3600)}
 
 
 def _merge(base, override):
@@ -43,7 +47,8 @@ def _merge(base, override):
         if key not in out:
             continue  # unknown setting: ignore
         if isinstance(out[key], dict) and isinstance(value, dict):
-            out[key].update({k: v for k, v in value.items() if isinstance(v, str)})
+            out[key].update({k: v for k, v in value.items() if isinstance(v, str) or (
+                isinstance(v, list) and all(isinstance(item, str) for item in v))})
         elif isinstance(out[key], bool):
             out[key] = bool(value)
         elif isinstance(out[key], (int, float)) and isinstance(value, (int, float)) and not isinstance(value, bool):

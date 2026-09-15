@@ -247,6 +247,8 @@ ANIMATIONS = {
                             bob=i % 2) for i in range(6)]),
     'wave': (6, [dict(eyes='happy', arms='wave', arm_phase=i) for i in range(4)]),
     'look': (3, [dict(look=-2), dict(look=-2), dict(), dict(look=2), dict(look=2), dict(eyes='closed')]),
+    'watch': (3, [dict(look=2), dict(look=2), dict(look=2, bob=1), dict(look=2, eyes='closed')]),
+    'dizzy': (6, [dict(eyes='dizzy', arms='low', fx='sweat', phase=i, bob=i % 2) for i in range(4)]),
     'dance': (8, [dict(eyes='happy', arms='cheer', arm_phase=i, legs=2 * i, bob=i % 2) for i in range(4)]),
     'happy': (6, [dict(eyes='happy', fx='heart', phase=i, bob=i % 2) for i in range(4)]),
     'error': (4, [dict(eyes='sad', arms='low', fx='sweat', phase=i) for i in range(4)]),
