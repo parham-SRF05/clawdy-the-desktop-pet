@@ -360,3 +360,9 @@ python tests/test_chatter.py
 
 - **Windows only.** It walks on the main screen's taskbar.
 - **Automatic start:** from Claude Code's `SessionStart` hook. Turn it off with `"start_with_claude_code": false`.
+
+---
+
+## Licence
+
+[MIT](LICENSE) — do what you like with it, just keep the copyright line.
